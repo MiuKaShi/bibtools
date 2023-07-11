@@ -49,7 +49,7 @@ for arg; do
     # With option '-a' print short journal name.
     if [[ "$arg" == "-a" ]]; then JOURNAL=2; fi
     # With option '-o' print one line citation.
-    if [[ "$arg" == "-o" ]]; then FMTSTR='$authors, $journal, $volume$number$pages ($year)'; fi
+    if [[ "$arg" == "-o" ]]; then FMTSTR='$authors: $title. $journal. $volume$number$pages($year)'; fi
     # With option '-b' print one line citation with first author only.
     if [[ "$arg" == "-b" ]]; then FMTSTR='$fauthor, $journal, $volume$number$pages ($year)'; fi
 done
