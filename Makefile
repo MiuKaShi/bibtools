@@ -1,4 +1,4 @@
-PREFIX = $(HOME)
+PREFIX = $(HOME)/.local
 BINDIR = $(PREFIX)/bin
 SCRIPTS = $(wildcard bin/*[^~])
 TARGETS = $(addprefix $(BINDIR)/,$(notdir $(SCRIPTS)))
