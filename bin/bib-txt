@@ -1,7 +1,8 @@
 #!/bin/bash
 # Print citation read from bibtex file
 
-FMTSTR='$authors, $journal $volume$number$pages ($year)\n$title\n$link\n'
+FMTSTR='$authors: $title. $journal. $volume$number, $pages ($year)'
+STYLE="springer"
 
 function usage() {
     cat 1>&2 <<EOF
@@ -15,7 +16,7 @@ Options:
   -r      print page ranges
   -l      long journal name
   -a      journal abbreviation
-  -o      one line citation
+  -e      elsevier style citation
   -b      brief one line citation
   -f str  use format string 'str'
 Default format string:
@@ -31,8 +32,8 @@ if [ $# -lt 1 ]; then usage 1; fi
 # Default options.
 FULLFIRSTNAME=0 # Abbreviate first and middle names.
 LASTNAMEFIRST=1 # Print family name, first names in author list.
-PAGERANGE=0 # Only print first page instead of page ranges.
-JOURNAL=0 # Print journal name as given in the bibtex file.
+PAGERANGE=0     # Only print first page instead of page ranges.
+JOURNAL=0       # Print journal name as given in the bibtex file.
 
 # Parse command line options.
 for arg; do
@@ -48,21 +49,22 @@ for arg; do
     if [[ "$arg" == "-l" ]]; then JOURNAL=1; fi
     # With option '-a' print short journal name.
     if [[ "$arg" == "-a" ]]; then JOURNAL=2; fi
-    # With option '-o' print one line citation.
-    if [[ "$arg" == "-o" ]]; then FMTSTR='$authors: $title. $journal. $volume$number$pages($year)'; fi
+    # With option '-e' print elsevier style citation.
+    if [[ "$arg" == "-e" ]]; then STYLE=elsevier && FMTSTR='$authors $title. $journal $year;$volume$number:$pages.'; fi
     # With option '-b' print one line citation with first author only.
     if [[ "$arg" == "-b" ]]; then FMTSTR='$fauthor, $journal, $volume$number$pages ($year)'; fi
 done
 
-if [[ "$1" == "-f" ]]
-then
+if [[ "$1" == "-f" ]]; then
     [[ "$#" -ge 2 ]] && FMTSTR="$2" \
-        || { echo "Missing argument to option '-f'!" >/dev/stderr; exit 1; }
+        || {
+            echo "Missing argument to option '-f'!" >/dev/stderr
+            exit 1
+        }
     shift 2 || shift 1
 fi
 
 if [ $# -lt 1 ]; then usage 1; fi
-
 
 TMPDIR=$(mktemp -d)
 trap "rm -rf $TMPDIR" EXIT
@@ -72,42 +74,40 @@ trap "rm -rf $TMPDIR" EXIT
 function remove_macros() { # echo text | remove_macros
     sed -e 's/\\[a-z][a-z]*{\([^{}]*\)}/\1/g' \
         -e 's/\\[a-z][a-z]*{\([^{}]*{[^{}]*}[^{}]*\)}/\1/g' \
-        -e 's/\\[a-z][a-z]*{\([^{}]*{[^{}]*{[^{}]*}[^{}]*}[^{}]*\)}/\1/g' \
+        -e 's/\\[a-z][a-z]*{\([^{}]*{[^{}]*{[^{}]*}[^{}]*}[^{}]*\)}/\1/g'
 
 }
 
 # Function to get a field value from the first bib entry.
 function getvalue() { # getvalue fieldname filename
-    pattern="^ *$(sed 's/\(.\)/[\u\1\l\1]/' <<< $1) *="
+    pattern="^ *$(sed 's/\(.\)/[\u\1\l\1]/' <<<$1) *="
     awk -v pattern="$pattern" '/^@/{nr+=1; if(nr>1) exit}
 {if ($0 ~ pattern) print $0}' "$2" | grep -o '{[^{].*' | head -n1 \
-    | bib-convu \
-    | remove_macros \
-    | sed -e 's/^{ *//;s/:*[}, ]*$//' \
-          -e 's/[{}"\]//g'
+        | bib-convu \
+        | remove_macros \
+        | sed -e 's/^{ *//;s/:*[}, ]*$//' \
+            -e 's/[{}"\]//g'
 }
 
-
 # Iterate bib files (possibly '-' for standard input).
-for bibfile in "$@"
-do
+for bibfile in "$@"; do
     # Skip options.
     test "$bibfile" != "-u" || continue
     test "$bibfile" != "-s" || continue
     test "$bibfile" != "-r" || continue
     test "$bibfile" != "-l" || continue
     test "$bibfile" != "-a" || continue
-    test "$bibfile" != "-o" || continue
+    test "$bibfile" != "-e" || continue
     test "$bibfile" != "-b" || continue
 
     # Replace »name.pdf« by »name.pdf.bib«.
-    bibfile=$(sed 's/\.pdf$/&.bib/' <<< "$bibfile")
+    bibfile=$(sed 's/\.pdf$/&.bib/' <<<"$bibfile")
 
     # Skip if not a regular file or standard input.
     test -f "$bibfile" -o "$bibfile" = "-" || {
         [[ "$bibfile" =~ ^- ]] \
             && echo "$(basename $0): $bibfile: Unknown option" >/dev/stderr \
-            || echo "$(basename $0): $bibfile: File not found" >/dev/stderr;
+            || echo "$(basename $0): $bibfile: File not found" >/dev/stderr
         continue
     }
     filenr=$(($filenr + 1))
@@ -119,13 +119,10 @@ BEGIN{nr=0}
 {if (nr) print $0 > sprintf("%s/%03d-%05d", dir, fnr, nr)}' "$bibfile"
 done
 
-
 # Iterate temporary single entry bibtex files.
-for bibfile in $TMPDIR/*
-do
+for bibfile in $TMPDIR/*; do
     # Obtain field values.
-    if grep -q @Book "$bibfile"
-    then
+    if grep -q @Book "$bibfile"; then
         journal=$(getvalue Title "$bibfile")
         volume=$(getvalue Publisher "$bibfile")
     else
@@ -133,25 +130,22 @@ do
         volume=$(getvalue Volume "$bibfile")
     fi
     title=$(getvalue Title "$bibfile")
-    number=$(getvalue Number "$bibfile" | sed 's/./.&/')
-    pages=$(getvalue Pages "$bibfile" | sed 's/^/, /')
+    number=$(getvalue Number "$bibfile")
+    pages=$(getvalue Pages "$bibfile")
     year=$(getvalue Year "$bibfile")
     doi=$(getvalue Doi "$bibfile")
     url=$(getvalue Url "$bibfile")
     key=$(bib-keyinsert -p "$bibfile")
+
+    if [ ! -z "$number" ]; then
+        number="($number)"
+    fi
 
     # Unchanged, long or short journal name.
     if [ $JOURNAL -eq 1 ]; then
         journal=$(bib-jabbr -f -j "$journal")
     elif [ $JOURNAL -eq 2 ]; then
         journal=$(bib-jabbr -j "$journal")
-    fi
-
-    # Page range or first page.
-    if [ $PAGERANGE -eq 1 ]; then
-        pages=$(sed 's/ *--* */–/' <<< $pages)
-    else
-        pages=$(sed 's/[-–].*//' <<< $pages)
     fi
 
     # Format list of authors as »Name, A. B., ...«.
@@ -165,29 +159,38 @@ do
     test $FULLFIRSTNAME -eq 1 && ABBRFNAME="''"
     SWAPNAMES="'s/\([^,]*\), \(.*\)/\2 \1/'"
     test $LASTNAMEFIRST -eq 1 && SWAPNAMES="''"
-    authors=$(getvalue Author "$bibfile" \
-        | sed \
-            -e 's/[{}]//g' \
-            -e 's/\(\<[A-Z]\>\)\.*/\1./g' \
-            -e 's/ and /\n/g' \
-            -e 's/~/ /g' \
-        | sed \
-            -e 's/\<Le\> \([A-Z][^ ]*$\)/le \1/g' \
-            -e '/,/!s/\(.*[A-Z][^ ]*\) \(.*\) *$/\2, \1/' \
-            -e 's/^\<le\> \([A-Z]\)/Le \1/g' \
-        | eval sed $ABBRFNAME \
-        | sed \
-            -e ':x;s/\([A-Z]\.[ -][A-Z]\)[^. ][^ -]*/\1./;tx' \
-        | eval sed $SWAPNAMES \
-        | sed ':x;N;s/\n/, /;tx'
-        )
+    authors=$(
+        getvalue Author "$bibfile" \
+            | sed \
+                -e 's/[{}]//g' \
+                -e 's/\(\<[A-Z]\>\)\.*/\1./g' \
+                -e 's/ and /\n/g' \
+                -e 's/~/ /g' \
+            | sed \
+                -e 's/\<Le\> \([A-Z][^ ]*$\)/le \1/g' \
+                -e '/,/!s/\(.*[A-Z][^ ]*\) \(.*\) *$/\2, \1/' \
+                -e 's/^\<le\> \([A-Z]\)/Le \1/g' \
+            | eval sed $ABBRFNAME \
+            | sed \
+                -e ':x;s/\([A-Z]\.[ -][A-Z]\)[^. ][^ -]*/\1./;tx' \
+            | eval sed $SWAPNAMES \
+            | sed ':x;N;s/\n/, /;tx'
+    )
+
+    # style-setting
+    if [[ "$STYLE" == "elsevier" ]]; then
+        authors=$(echo $authors | sed -e 's/\([a-z]\),/\1/g' | sed -e 's/\.,/,/g' | sed -e 's/\. //g' | sed -e 's/\.-//g')
+    fi
+    if [[ "$STYLE" == "springer" ]]; then
+        authors=$(echo $authors | sed -e 's/\. /./g' | sed -e 's/\.-/./g')
+        journal=$(echo $journal | sed -e 's/ /\. /g')
+    fi
 
     # Derived values.
-    fauthor=$(sed 's/,.*//' <<< "$authors")
-    ncommas=$(grep -o , <<< "$authors" | wc -l)
-    if [[ "$SWAPNAMES" == "''" ]] && [ $ncommas -gt 1 ] || \
-       [[ "$SWAPNAMES" != "''" ]] && [ $ncommas -gt 0 ]
-    then
+    fauthor=$(sed 's/,.*//' <<<"$authors")
+    ncommas=$(grep -o , <<<"$authors" | wc -l)
+    if [[ "$SWAPNAMES" == "''" ]] && [ $ncommas -gt 1 ] \
+        || [[ "$SWAPNAMES" != "''" ]] && [ $ncommas -gt 0 ]; then
         # Add 'et al.' in case of several authors.
         fauthor="$fauthor et al."
     fi

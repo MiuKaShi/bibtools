@@ -1,0 +1,26 @@
+#! /bin/bash
+
+PAPER_NOTES=$HOME/notes/paper_notes
+DAY_NOTES=$HOME/notes/day_notes
+
+TITLE=${1%.*}
+
+create_md() {
+    ID=$(date '+%Y%m%d%H%M%S')
+    FILE=$DAY_NOTES/$ID.md
+    cat >"$FILE" <<EOF
+---
+id: "$ID"
+aliases:
+  - "@$TITLE"
+tags: []
+---
+
+# @$TITLE
+EOF
+}
+
+FILE=$(grep "\- \"@$TITLE"\" $PAPER_NOTES/*.md | cut -d':' -f1)
+[[ -z "$FILE" ]] && FILE=$(grep "\- \"@$TITLE"\" $DAY_NOTES/*.md | cut -d':' -f1)
+[[ -z "$FILE" ]] && create_md
+$TERMINAL -e $EDITOR "$FILE"

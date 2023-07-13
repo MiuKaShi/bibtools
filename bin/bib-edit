@@ -1,0 +1,23 @@
+#!/bin/bash
+
+if [ $# -ne 2 ]; then
+    echo "Please provide a .bib file and a citation key as arguments."
+    exit 1
+fi
+
+# Define the path to your .bib file
+BIBFILE="$1"
+CITE_KEY="$2"
+
+# Find the line number of the citation key in the .bib file
+LINE_NUM=$(grep -n "@.*{${CITE_KEY}," ${BIBFILE} | cut -f1 -d:)
+
+# Check if the citation key was found
+if [ -z "${LINE_NUM}" ]; then
+    echo "Citation key not found in .bib file."
+    exit 1
+fi
+
+# Open the .bib file with nvim at the citation key line
+$TERMINAL -e $EDITOR +${LINE_NUM} ${BIBFILE}
+
